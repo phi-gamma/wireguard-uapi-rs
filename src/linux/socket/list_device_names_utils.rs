@@ -1,12 +1,19 @@
 use super::parse::parse_nla_nul_string;
 use crate::err::ListDevicesError;
-use neli::consts::{Arphrd, Ifla, NlmF, Nlmsg, Rtm};
-use neli::nl::Nlmsghdr;
-use neli::rtnl::Ifinfomsg;
-use neli::rtnl::Rtattr;
-use neli::{Nl, StreamReadBuffer};
+use neli::{
+    consts::{
+        nl::{NlTypeWrapper, NlmF, NlmFFlags},
+        rtnl::{Arphrd, Iff, IffFlags, Ifla, Rtm},
+    },
+    err::NlError,
+    nl::{NlPayload, Nlmsghdr},
+    rtnl::{Ifinfomsg, Rtattr},
+    types::RtBuffer,
+    Nl,
+};
+use std::convert::TryFrom;
 
-pub fn get_list_device_names_msg() -> Nlmsghdr<Rtm, Ifinfomsg<Ifla>> {
+pub fn get_list_device_names_msg() -> Nlmsghdr<Rtm, Ifinfomsg> {
     let infomsg = {
         let ifi_family =
             neli::consts::rtnl::RtAddrFamily::UnrecognizedVariant(libc::AF_UNSPEC as u8);
@@ -14,18 +21,22 @@ pub fn get_list_device_names_msg() -> Nlmsghdr<Rtm, Ifinfomsg<Ifla>> {
         // embedded C library does.
         let ifi_type = Arphrd::Netrom;
         let ifi_index = 0;
-        let ifi_flags = vec![];
-        let rtattrs: Vec<Rtattr<Ifla, Vec<u8>>> = vec![];
-        Ifinfomsg::new(ifi_family, ifi_type, ifi_index, ifi_flags, rtattrs)
+        let ifi_flags = IffFlags::empty();
+        let rtattrs = RtBuffer::new();
+        let ifi_change = IffFlags::new(&[Iff::Up]);
+
+        Ifinfomsg::new(
+            ifi_family, ifi_type, ifi_index, ifi_flags, ifi_change, rtattrs,
+        )
     };
 
     let len = None;
     let nl_type = Rtm::Getlink;
-    let flags = vec![NlmF::Request, NlmF::Ack, NlmF::Dump];
+    let flags = NlmFFlags::new(&[NlmF::Request, NlmF::Ack, NlmF::Dump]);
     let seq = None;
     let pid = None;
     let payload = infomsg;
-    Nlmsghdr::new(len, nl_type, flags, seq, pid, payload)
+    Nlmsghdr::new(len, nl_type, flags, seq, pid, NlPayload::Payload(payload))
 }
 
 pub struct PotentialWireGuardDeviceName {
@@ -33,34 +44,37 @@ pub struct PotentialWireGuardDeviceName {
     pub is_wireguard: bool,
 }
 
-pub fn parse_ifinfomsg(
-    response: Nlmsghdr<Nlmsg, Ifinfomsg<Ifla>>,
-) -> Result<PotentialWireGuardDeviceName, ListDevicesError> {
-    let mut is_wireguard = false;
-    let mut ifname: Option<String> = None;
+impl TryFrom<Nlmsghdr<NlTypeWrapper, Ifinfomsg>> for PotentialWireGuardDeviceName {
+    type Error = ListDevicesError;
 
-    for attr in response.nl_payload.rtattrs {
-        match attr.rta_type {
-            Ifla::UnrecognizedVariant(libc::IFLA_LINKINFO) => {
-                let mut buf = StreamReadBuffer::new(&attr.rta_payload);
-                let linkinfo = Rtattr::<u16, Vec<u8>>::deserialize(&mut buf)?;
+    fn try_from(response: Nlmsghdr<NlTypeWrapper, Ifinfomsg>) -> Result<Self, Self::Error> {
+        let mut is_wireguard = false;
+        let mut ifname: Option<String> = None;
 
-                if linkinfo.rta_type == libc::IFLA_INFO_KIND {
-                    let info_kind = parse_nla_nul_string(&linkinfo.rta_payload)?;
-                    if info_kind == crate::linux::consts::WG_GENL_NAME {
-                        is_wireguard = true;
+        for attr in response.get_payload()?.rtattrs.iter() {
+            match attr.rta_type {
+                Ifla::UnrecognizedVariant(libc::IFLA_LINKINFO) => {
+                    let buf = attr.rta_payload.as_ref();
+                    let linkinfo =
+                        Rtattr::<u16, Vec<u8>>::deserialize(buf).map_err(NlError::new)?;
+
+                    if linkinfo.rta_type == libc::IFLA_INFO_KIND {
+                        let info_kind = parse_nla_nul_string(&linkinfo.rta_payload)?;
+                        if info_kind == crate::linux::consts::WG_GENL_NAME {
+                            is_wireguard = true;
+                        }
                     }
                 }
-            }
-            Ifla::Ifname => {
-                ifname = Some(parse_nla_nul_string(&attr.rta_payload)?);
-            }
-            _ => {}
-        };
-    }
+                Ifla::Ifname => {
+                    ifname = Some(parse_nla_nul_string(attr.rta_payload.as_ref())?);
+                }
+                _ => {}
+            };
+        }
 
-    Ok(PotentialWireGuardDeviceName {
-        ifname,
-        is_wireguard,
-    })
+        Ok(PotentialWireGuardDeviceName {
+            ifname,
+            is_wireguard,
+        })
+    }
 }
