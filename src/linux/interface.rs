@@ -20,12 +20,8 @@ impl<'a> DeviceInterface<'a> {
 impl<'a> From<&DeviceInterface<'a>> for WgDeviceAttribute {
     fn from(interface: &DeviceInterface) -> Self {
         return match interface {
-            &DeviceInterface::Index(ifindex) => {
-                WgDeviceAttribute::Ifindex(ifindex)
-            }
-            DeviceInterface::Name(ifname) => {
-                WgDeviceAttribute::Ifname(ifname.to_string())
-            }
+            &DeviceInterface::Index(ifindex) => WgDeviceAttribute::Ifindex(ifindex),
+            DeviceInterface::Name(ifname) => WgDeviceAttribute::Ifname(ifname.to_string()),
         };
     }
 }
