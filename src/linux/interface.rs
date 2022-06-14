@@ -1,6 +1,7 @@
 use crate::linux::attr::WgDeviceAttribute;
 use neli::err::SerError;
-use neli::nlattr::Nlattr;
+use neli::genl::Nlattr;
+use neli::types::Buffer;
 use std::borrow::Cow;
 use std::convert::TryFrom;
 
@@ -20,16 +21,16 @@ impl<'a> DeviceInterface<'a> {
     }
 }
 
-impl<'a> TryFrom<&DeviceInterface<'a>> for Nlattr<WgDeviceAttribute, Vec<u8>> {
+impl<'a> TryFrom<&DeviceInterface<'a>> for Nlattr<WgDeviceAttribute, Buffer> {
     type Error = SerError;
 
     fn try_from(interface: &DeviceInterface) -> Result<Self, Self::Error> {
         let attr = match interface {
             &DeviceInterface::Index(ifindex) => {
-                Nlattr::new(None, WgDeviceAttribute::Ifindex, ifindex)?
+                Nlattr::new(false, false, WgDeviceAttribute::Ifindex, ifindex)?
             }
             DeviceInterface::Name(ifname) => {
-                Nlattr::new(None, WgDeviceAttribute::Ifname, ifname.as_ref())?
+                Nlattr::new(false, false, WgDeviceAttribute::Ifname, ifname.as_ref())?
             }
         };
         Ok(attr)

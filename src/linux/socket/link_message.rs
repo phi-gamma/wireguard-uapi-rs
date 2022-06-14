@@ -1,63 +1,47 @@
 use crate::linux::consts::WG_GENL_NAME;
-use libc::{IFLA_INFO_KIND, IFLA_LINKINFO};
-use neli::consts::{Arphrd, Ifla, NlmF, Rtm};
+use neli::consts::{
+    nl::NlmF,
+    rtnl::{Arphrd, Ifla, IflaInfo, Rtm},
+};
 use neli::err::SerError;
-use neli::nl::Nlmsghdr;
-use neli::nlattr::Nlattr;
+use neli::nl::{NlPayload, Nlmsghdr};
 use neli::rtnl::Ifinfomsg;
 use neli::rtnl::Rtattr;
-use neli::Nl;
-use neli::StreamWriteBuffer;
-
-const RTATTR_HEADER_LEN: libc::c_ushort = 4;
+use neli::types::RtBuffer;
 
 pub enum WireGuardDeviceLinkOperation {
     Add,
     Delete,
 }
 
-fn create_rtattr(rta_type: Ifla, rta_payload: Vec<u8>) -> Rtattr<Ifla, Vec<u8>> {
-    let mut rtattr = Rtattr {
-        rta_len: 0,
-        rta_type,
-        rta_payload,
-    };
-    // neli doesn't provide a nice way to automatically set this for rtattr (it does for nlattr),
-    // so we'll do some small math ourselves.
-    rtattr.rta_len = rtattr.payload_size() as libc::c_ushort + RTATTR_HEADER_LEN;
-    rtattr
-}
-
 pub fn link_message(
     ifname: &str,
     link_operation: WireGuardDeviceLinkOperation,
-) -> Result<Nlmsghdr<Rtm, Ifinfomsg<Ifla>>, SerError> {
-    let ifname = create_rtattr(Ifla::Ifname, ifname.as_bytes().to_vec());
+) -> Result<Nlmsghdr<Rtm, Ifinfomsg>, SerError> {
+    let rtattrs = {
+        let mut attrs = RtBuffer::new();
+        attrs.push(Rtattr::new(None, Ifla::Ifname, ifname.as_bytes())?);
 
-    let link = {
-        let rta_type = Ifla::UnrecognizedVariant(IFLA_LINKINFO);
-        let payload = {
-            // The Rtattr struct doesn't have a add_nested_attribute field like Nlattr. To work
-            // around this, we can create a Nlattr and manually serialize it to a byte vector.
-            let mut payload = StreamWriteBuffer::new_growable(None);
-            let rtattr =
-                Nlattr::new::<Vec<u8>>(None, IFLA_INFO_KIND, WG_GENL_NAME.as_bytes().to_vec())?;
-            rtattr.serialize(&mut payload)?;
-            payload.as_ref().to_vec()
-        };
-        create_rtattr(rta_type, payload)
+        let mut genl_name = RtBuffer::new();
+        genl_name.push(Rtattr::new(None, IflaInfo::Kind, WG_GENL_NAME.as_bytes())?);
+
+        let link = Rtattr::new(None, Ifla::Linkinfo, genl_name)?;
+
+        attrs.push(link);
+        attrs
     };
 
     let infomsg = {
-        let ifi_family =
-            neli::consts::rtnl::RtAddrFamily::UnrecognizedVariant(libc::AF_UNSPEC as u8);
+        let ifi_family = neli::consts::rtnl::RtAddrFamily::Unspecified;
         // Arphrd::Netrom corresponds to 0. Not sure why 0 is necessary here but this is what the
         // embedded C library does.
         let ifi_type = Arphrd::Netrom;
         let ifi_index = 0;
-        let ifi_flags = vec![];
-        let rtattrs = vec![ifname, link];
-        Ifinfomsg::new(ifi_family, ifi_type, ifi_index, ifi_flags, rtattrs)
+        let ifi_flags = neli::consts::rtnl::IffFlags::empty();
+        let ifi_change = neli::consts::rtnl::IffFlags::empty();
+        Ifinfomsg::new(
+            ifi_family, ifi_type, ifi_index, ifi_flags, ifi_change, rtattrs,
+        )
     };
 
     let nlmsg = {
@@ -67,14 +51,19 @@ pub fn link_message(
             WireGuardDeviceLinkOperation::Delete => Rtm::Dellink,
         };
         let flags = match link_operation {
-            WireGuardDeviceLinkOperation::Add => {
-                vec![NlmF::Request, NlmF::Ack, NlmF::Create, NlmF::Excl]
+            WireGuardDeviceLinkOperation::Add => neli::consts::nl::NlmFFlags::new(&[
+                NlmF::Request,
+                NlmF::Ack,
+                NlmF::Create,
+                NlmF::Excl,
+            ]),
+            WireGuardDeviceLinkOperation::Delete => {
+                neli::consts::nl::NlmFFlags::new(&[NlmF::Request, NlmF::Ack])
             }
-            WireGuardDeviceLinkOperation::Delete => vec![NlmF::Request, NlmF::Ack],
         };
         let seq = None;
         let pid = None;
-        let payload = infomsg;
+        let payload = NlPayload::Payload(infomsg);
         Nlmsghdr::new(len, nl_type, flags, seq, pid, payload)
     };
 

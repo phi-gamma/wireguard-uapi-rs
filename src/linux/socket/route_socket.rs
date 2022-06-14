@@ -2,38 +2,35 @@ use super::list_device_names_utils;
 use super::{link_message, WireGuardDeviceLinkOperation};
 use crate::err::{ConnectError, LinkDeviceError, ListDevicesError};
 use list_device_names_utils::PotentialWireGuardDeviceName;
-use neli::consts::{Ifla, NlFamily, Nlmsg};
+use neli::consts::{nl::Nlmsg, socket::NlFamily};
 use neli::rtnl::Ifinfomsg;
-use neli::socket::NlSocket;
+use neli::socket::NlSocketHandle;
 
 pub struct RouteSocket {
-    sock: NlSocket,
+    sock: NlSocketHandle,
 }
 
 impl RouteSocket {
     pub fn connect() -> Result<Self, ConnectError> {
-        let track_seq = true;
-        let mut sock = NlSocket::new(NlFamily::Route, track_seq)?;
-
         // Autoselect a PID
         let pid = None;
-        let groups = None;
-        sock.bind(pid, groups)?;
+        let groups: &[u32] = &[];
+        let sock = NlSocketHandle::connect(NlFamily::Route, pid, groups)?;
 
         Ok(Self { sock })
     }
 
     pub fn add_device(&mut self, ifname: &str) -> Result<(), LinkDeviceError> {
         let operation = WireGuardDeviceLinkOperation::Add;
-        self.sock.send_nl(link_message(ifname, operation)?)?;
-        self.sock.recv_ack()?;
+        self.sock.send(link_message(ifname, operation)?)?;
+        self.sock.recv()?;
         Ok(())
     }
 
     pub fn del_device(&mut self, ifname: &str) -> Result<(), LinkDeviceError> {
         let operation = WireGuardDeviceLinkOperation::Delete;
-        self.sock.send_nl(link_message(ifname, operation)?)?;
-        self.sock.recv_ack()?;
+        self.sock.send(link_message(ifname, operation)?)?;
+        self.sock.recv()?;
         Ok(())
     }
 
@@ -41,9 +38,9 @@ impl RouteSocket {
     /// [IFLA_INFO_KIND](libc::IFLA_INFO_KIND) value.
     pub fn list_device_names(&mut self) -> Result<Vec<String>, ListDevicesError> {
         self.sock
-            .send_nl(list_device_names_utils::get_list_device_names_msg())?;
+            .send(list_device_names_utils::get_list_device_names_msg())?;
 
-        let mut iter = self.sock.iter::<Nlmsg, Ifinfomsg<Ifla>>();
+        let mut iter = self.sock.iter::<Nlmsg, Ifinfomsg>(false);
 
         let mut result_names = vec![];
 
