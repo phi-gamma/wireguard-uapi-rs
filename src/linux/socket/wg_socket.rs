@@ -115,11 +115,15 @@ impl WgSocket {
     ///  sudo ip -4 route add 127.3.1.1/32 dev wgtest0
     /// ```
     pub fn set_device(&mut self, device: set::Device) -> Result<(), SetDeviceError> {
+        eprintln!("wg ¤¤¤ set_device () start");
         for nl_message in create_set_device_messages(device, self.family_id)? {
+            eprintln!("wg ¤¤¤ set_device () next");
             self.sock.send(nl_message)?;
+            eprintln!("wg ¤¤¤ set_device () recv");
             self.sock.recv()?;
         }
 
+        eprintln!("wg ¤¤¤ set_device () done");
         Ok(())
     }
 }

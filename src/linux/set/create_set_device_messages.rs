@@ -308,7 +308,6 @@ pub fn create_set_device_messages(
         let public_key = peer.public_key;
         let (mut incubating_peer_fragment, allowed_ips_to_add) =
             IncubatingPeerFragment::split_off_allowed_ips(peer)?;
-
         let next_size = incubating_device_fragment.incubating_size()
             + incubating_peer_fragment.incubating_size();
         if next_size > NETLINK_MSG_LIMIT {

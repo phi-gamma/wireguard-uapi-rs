@@ -14,16 +14,21 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(target_os = "linux")]
 fn main_linux() -> anyhow::Result<()> {
+    eprintln!("»»» rt");
     let device_names = wireguard_uapi::RouteSocket::connect()?.list_device_names()?;
+    eprintln!("»»» wg");
 
     let mut wg = wireguard_uapi::WgSocket::connect()?;
+    eprintln!("»»» names");
     for device_name in &device_names {
+        eprintln!("»»» device {} start", device_name);
         let device = wg.get_device(wireguard_uapi::DeviceInterface::from_name(device_name))?;
         print_device(&device);
 
         if Some(device_name) != device_names.last() {
             println!();
         }
+        eprintln!("»»» device {} done", device_name);
     }
 
     Ok(())
