@@ -53,6 +53,7 @@ pub enum WgDeviceAttribute {
     ListenPort = 6,
     Fwmark = 7,
     Peers = 8,
+    Monitor = 9,
 }
 
 impl NlAttrType for WgDeviceAttribute {}
