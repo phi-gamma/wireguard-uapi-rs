@@ -20,6 +20,8 @@ pub struct Device<'a> {
     pub listen_port: Option<u16>,
     /// 0 to disable
     pub fwmark: Option<u32>,
+    /// true to enable mcast events
+    pub monitor: Option<bool>,
     pub peers: Vec<Peer<'a>>,
 }
 
@@ -32,6 +34,7 @@ impl<'a> Device<'a> {
             listen_port: None,
             fwmark: None,
             peers: vec![],
+            monitor: None,
         }
     }
 
@@ -43,6 +46,7 @@ impl<'a> Device<'a> {
             listen_port: None,
             fwmark: None,
             peers: vec![],
+            monitor: None,
         }
     }
 
@@ -63,6 +67,11 @@ impl<'a> Device<'a> {
 
     pub fn fwmark(mut self, fwmark: u32) -> Self {
         self.fwmark = Some(fwmark);
+        self
+    }
+
+    pub fn monitor(mut self, monitor: bool) -> Self {
+        self.monitor = Some(monitor);
         self
     }
 

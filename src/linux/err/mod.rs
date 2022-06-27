@@ -4,6 +4,9 @@ pub use connect_error::ConnectError;
 mod get_device_error;
 pub use get_device_error::GetDeviceError;
 
+mod iter_mcast_events_error;
+pub use iter_mcast_events_error::IterMcastEventsError;
+
 mod link_device_error;
 pub use link_device_error::LinkDeviceError;
 

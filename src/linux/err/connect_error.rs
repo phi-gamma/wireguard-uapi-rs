@@ -13,6 +13,9 @@ pub enum ConnectError {
 
     #[error("Unable to connect to the WireGuard DKMS. Is WireGuard installed?")]
     ResolveFamilyError(#[source] NlError<GenlId, Genlmsghdr<CtrlCmd, CtrlAttr>>),
+
+    #[error("Unable to resolve WireGuard peer multicast group. Is WireGuard patched?")]
+    ResolveMcastGroupError(#[source] NlError<GenlId, Genlmsghdr<CtrlCmd, CtrlAttr>>),
 }
 
 impl From<NlError> for ConnectError {

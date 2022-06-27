@@ -79,6 +79,14 @@ impl FromStr for AllowedIp {
     }
 }
 
+#[derive(Builder, Clone, Debug, PartialEq)]
+pub struct EndpointChange {
+    pub ifindex: u32,
+    pub ifname: String,
+    pub public_key: [u8; 32],
+    pub endpoint: SocketAddr,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

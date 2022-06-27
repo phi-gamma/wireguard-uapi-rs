@@ -6,6 +6,7 @@ use neli::neli_enum;
 pub enum WgCmd {
     GetDevice = 0,
     SetDevice = 1,
+    ChangedPeer = 2,
 }
 
 impl Cmd for WgCmd {}

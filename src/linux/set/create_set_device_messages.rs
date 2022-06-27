@@ -21,6 +21,7 @@ use std::net::SocketAddr;
 const NETLINK_HEADER_SIZE: usize = 16;
 const GENL_HEADER_SIZE: usize = 4;
 const NETLINK_MSG_LIMIT: usize = 65_536; // 2^16
+const WGDEVICE_MONITOR_F_ENDPOINT: u8 = 1;
 
 type NlWgMessage = Nlmsghdr<NlWgMsgType, Genlmsghdr<WgCmd, WgDeviceAttribute>>;
 
@@ -78,6 +79,19 @@ impl IncubatingDeviceFragment {
                         NLA_NETWORK_ORDER,
                         WgDeviceAttribute::Fwmark,
                         fwmark,
+                    )?);
+                }
+
+                if let Some(monitor) = device.monitor {
+                    attrs.push(Nlattr::new::<u8>(
+                        false,
+                        false,
+                        WgDeviceAttribute::Monitor,
+                        if monitor {
+                            WGDEVICE_MONITOR_F_ENDPOINT
+                        } else {
+                            0u8
+                        },
                     )?);
                 }
 

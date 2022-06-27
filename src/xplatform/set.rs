@@ -27,6 +27,8 @@ pub struct Device {
     /// replace any existing peers, rather than append to the existing peer list.
     pub replace_peers: Option<bool>,
 
+    pub monitor: bool,
+
     pub peers: Vec<Peer>,
 }
 
@@ -47,6 +49,10 @@ impl Display for Device {
 
         if let Some(replace_peers) = self.replace_peers {
             writeln!(f, "{}={}", SetKey::ReplacePeers, replace_peers)?;
+        }
+
+        if let Some(monitor) = self.monitor {
+            writeln!(f, "{}={}", SetKey::Monitor, monitor)?;
         }
 
         for peer in &self.peers {

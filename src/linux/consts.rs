@@ -1,6 +1,7 @@
 // wireguard.h netlink uapi
 pub const WG_GENL_NAME: &str = "wireguard";
 pub const WG_GENL_VERSION: u8 = 1;
+pub const WG_MULTICAST_GROUP_PEERS: &str = "peers";
 
 /// Never create Netlink attributes with network byte order. Communication with
 /// the WireGuard kernel module is expected to be use native endian.

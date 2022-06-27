@@ -84,6 +84,7 @@ pub(crate) enum SetKey {
     PersistentKeepaliveInterval,
     ReplaceAllowedIps,
     AllowedIp,
+    Monitor,
 }
 
 impl From<&SetKey> for &'static str {
@@ -101,6 +102,7 @@ impl From<&SetKey> for &'static str {
             SetKey::PersistentKeepaliveInterval => "persistent_keepalive_interval",
             SetKey::ReplaceAllowedIps => "replace_allowed_ips",
             SetKey::AllowedIp => "allowed_ip",
+            SetKey::Monitor => "monitor",
         }
     }
 }

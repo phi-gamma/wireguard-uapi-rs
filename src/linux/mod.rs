@@ -7,4 +7,4 @@ pub mod set;
 mod socket;
 
 pub use interface::DeviceInterface;
-pub use socket::{RouteSocket, WgSocket};
+pub use socket::{RouteSocket, WgMcastEventIterator, WgSocket};

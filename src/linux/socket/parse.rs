@@ -1,8 +1,12 @@
 use crate::err::{ParseAttributeError, ParseDeviceError, ParseIpAddrError, ParseSockAddrError};
-use crate::get::{AllowedIp, AllowedIpBuilder, Device, DeviceBuilder, Peer, PeerBuilder};
+use crate::get::{
+    AllowedIp, AllowedIpBuilder, Device, DeviceBuilder, EndpointChange, EndpointChangeBuilder,
+    Peer, PeerBuilder,
+};
 use crate::linux::attr::{
     NlaNested, WgAllowedIpAttribute, WgDeviceAttribute, WgPeerAttribute, NLA_TYPE_MASK,
 };
+use crate::linux::err::IterMcastEventsError;
 use libc::{in6_addr, in_addr, AF_INET, AF_INET6};
 use neli::{
     attr,
@@ -51,6 +55,9 @@ impl TryFrom<AttrHandle<'_, WgDeviceAttribute>> for Device {
                 WgDeviceAttribute::Flags => {
                     // This attribute is for set_device. Ignore it for get_device.
                 }
+                WgDeviceAttribute::Monitor => {
+                    // This attribute is for set_device. Ignore it for get_device.
+                }
                 WgDeviceAttribute::UnrecognizedConst(i) => {
                     return Err(ParseDeviceError::UnknownDeviceAttributeError { id: i })
                 }
@@ -59,6 +66,37 @@ impl TryFrom<AttrHandle<'_, WgDeviceAttribute>> for Device {
 
         Ok(device_builder.build()?)
     }
+}
+
+pub fn parse_endpoint_change(
+    mut handle: AttrHandle<'_, WgDeviceAttribute>,
+) -> Result<EndpointChange, IterMcastEventsError> {
+    let mut ec_builder = EndpointChangeBuilder::default();
+
+    ec_builder.ifindex(handle.get_attr_payload_as::<u32>(WgDeviceAttribute::Ifindex)?);
+    ec_builder.ifname(handle.get_attr_payload_as_with_len::<String>(WgDeviceAttribute::Ifname)?);
+
+    let peers_attr = handle.get_nested_attributes::<NlaNested>(WgDeviceAttribute::Peers)?;
+
+    //let nested_attrs = peers_attr.get_attr_handle::<WgPeerAttribute>()?;
+
+    for attr in peers_attr.iter() {
+        let nested_handle = attr.get_attr_handle::<WgPeerAttribute>()?;
+
+        for attr in nested_handle.iter() {
+            match attr.nla_type.nla_type & NLA_TYPE_MASK {
+                WgPeerAttribute::PublicKey => {
+                    ec_builder.public_key(parse_device_key(attr.nla_payload.as_ref())?);
+                }
+                WgPeerAttribute::Endpoint => {
+                    ec_builder.endpoint(parse_sockaddr_in(attr.nla_payload.as_ref())?);
+                }
+                _ => (),
+            }
+        }
+    }
+
+    Ok(ec_builder.build()?)
 }
 
 pub fn extend_device(
