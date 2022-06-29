@@ -1,22 +1,18 @@
-use super::parse::parse_nla_nul_string;
 use crate::err::ListDevicesError;
 use neli::{
     consts::{
-        nl::{NlTypeWrapper, NlmF, NlmFFlags},
-        rtnl::{Arphrd, Iff, IffFlags, Ifla, Rtm},
+        nl::{NlmF, NlmFFlags, Nlmsg},
+        rtnl::{Arphrd, Iff, IffFlags, Ifla, IflaInfo, Rtm},
     },
-    err::NlError,
     nl::{NlPayload, Nlmsghdr},
-    rtnl::{Ifinfomsg, Rtattr},
+    rtnl::Ifinfomsg,
     types::RtBuffer,
-    Nl,
 };
 use std::convert::TryFrom;
 
 pub fn get_list_device_names_msg() -> Nlmsghdr<Rtm, Ifinfomsg> {
     let infomsg = {
-        let ifi_family =
-            neli::consts::rtnl::RtAddrFamily::UnrecognizedVariant(libc::AF_UNSPEC as u8);
+        let ifi_family = neli::consts::rtnl::RtAddrFamily::Unspecified;
         // Arphrd::Netrom corresponds to 0. Not sure why 0 is necessary here but this is what the
         // embedded C library does.
         let ifi_type = Arphrd::Netrom;
@@ -44,32 +40,22 @@ pub struct PotentialWireGuardDeviceName {
     pub is_wireguard: bool,
 }
 
-impl TryFrom<Nlmsghdr<NlTypeWrapper, Ifinfomsg>> for PotentialWireGuardDeviceName {
+impl TryFrom<Nlmsghdr<Nlmsg, Ifinfomsg>> for PotentialWireGuardDeviceName {
     type Error = ListDevicesError;
 
-    fn try_from(response: Nlmsghdr<NlTypeWrapper, Ifinfomsg>) -> Result<Self, Self::Error> {
+    fn try_from(response: Nlmsghdr<Nlmsg, Ifinfomsg>) -> Result<Self, Self::Error> {
         let mut is_wireguard = false;
-        let mut ifname: Option<String> = None;
-
-        for attr in response.get_payload()?.rtattrs.iter() {
-            match attr.rta_type {
-                Ifla::UnrecognizedVariant(libc::IFLA_LINKINFO) => {
-                    let buf = attr.rta_payload.as_ref();
-                    let linkinfo =
-                        Rtattr::<u16, Vec<u8>>::deserialize(buf).map_err(NlError::new)?;
-
-                    if linkinfo.rta_type == libc::IFLA_INFO_KIND {
-                        let info_kind = parse_nla_nul_string(&linkinfo.rta_payload)?;
-                        if info_kind == crate::linux::consts::WG_GENL_NAME {
-                            is_wireguard = true;
-                        }
-                    }
-                }
-                Ifla::Ifname => {
-                    ifname = Some(parse_nla_nul_string(attr.rta_payload.as_ref())?);
-                }
-                _ => {}
-            };
+        let payload = response
+            .nl_payload
+            .get_payload()
+            .ok_or(ListDevicesError::Unknown)?;
+        let mut handle = payload.rtattrs.get_attr_handle();
+        let ifname = handle
+            .get_attr_payload_as_with_len::<String>(Ifla::Ifname)
+            .ok();
+        if let Ok(linkinfo) = handle.get_nested_attributes(Ifla::Linkinfo) {
+            let linktype = linkinfo.get_attr_payload_as_with_len::<String>(IflaInfo::Kind)?;
+            is_wireguard = linktype == crate::linux::consts::WG_GENL_NAME;
         }
 
         Ok(PotentialWireGuardDeviceName {

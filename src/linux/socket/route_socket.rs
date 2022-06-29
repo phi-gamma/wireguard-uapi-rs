@@ -3,10 +3,7 @@ use super::{link_message, WireGuardDeviceLinkOperation};
 use crate::err::{ConnectError, LinkDeviceError, ListDevicesError};
 use list_device_names_utils::PotentialWireGuardDeviceName;
 use neli::{
-    consts::{
-        nl::{NlTypeWrapper, Nlmsg},
-        socket::NlFamily,
-    },
+    consts::{nl::Nlmsg, socket::NlFamily},
     rtnl::Ifinfomsg,
     socket::NlSocketHandle,
 };
@@ -18,27 +15,25 @@ pub struct RouteSocket {
 
 impl RouteSocket {
     pub fn connect() -> Result<Self, ConnectError> {
-        let sock = NlSocketHandle::new(NlFamily::Route)?;
-
         // Autoselect a PID
         let pid = None;
         let groups = &[];
-        sock.bind(pid, groups)?;
+        let sock = NlSocketHandle::connect(NlFamily::Route, pid, groups)?;
 
         Ok(Self { sock })
     }
 
     pub fn add_device(&mut self, ifname: &str) -> Result<(), LinkDeviceError> {
         let operation = WireGuardDeviceLinkOperation::Add;
-
         self.sock.send(link_message(ifname, operation)?)?;
+        self.sock.recv()?;
         Ok(())
     }
 
     pub fn del_device(&mut self, ifname: &str) -> Result<(), LinkDeviceError> {
         let operation = WireGuardDeviceLinkOperation::Delete;
-
         self.sock.send(link_message(ifname, operation)?)?;
+        self.sock.recv()?;
         Ok(())
     }
 
@@ -48,14 +43,14 @@ impl RouteSocket {
         self.sock
             .send(list_device_names_utils::get_list_device_names_msg())?;
 
-        let mut iter = self.sock.iter::<Ifinfomsg>(false);
+        let mut iter = self.sock.iter::<Nlmsg, Ifinfomsg>(false);
 
         let mut result_names = vec![];
 
         while let Some(Ok(response)) = iter.next() {
             match response.nl_type {
-                NlTypeWrapper::Nlmsg(Nlmsg::Error) => return Err(ListDevicesError::Unknown),
-                NlTypeWrapper::Nlmsg(Nlmsg::Done) => break,
+                Nlmsg::Error => return Err(ListDevicesError::Unknown),
+                Nlmsg::Done => break,
                 _ => (),
             }
 

@@ -11,7 +11,7 @@ use crate::linux::DeviceInterface;
 use libc::IFNAMSIZ;
 use neli::{
     consts::{
-        nl::{NlTypeWrapper, NlmF, NlmFFlags, Nlmsg},
+        nl::{NlmF, NlmFFlags, Nlmsg},
         socket::NlFamily,
     },
     genl::{Genlmsghdr, Nlattr},
@@ -34,12 +34,10 @@ impl WgSocket {
                 .map_err(ConnectError::ResolveFamilyError)?
         };
 
-        let wgsock = NlSocketHandle::new(NlFamily::Generic)?;
-
         // Autoselect a PID
         let pid = None;
         let groups = &[];
-        wgsock.bind(pid, groups)?;
+        let wgsock = NlSocketHandle::connect(NlFamily::Generic, pid, groups)?;
 
         Ok(Self {
             sock: wgsock,
@@ -56,16 +54,10 @@ impl WgSocket {
                 Some(name.len())
                     .filter(|&len| 0 < len && len < IFNAMSIZ)
                     .ok_or(GetDeviceError::InvalidInterfaceName)?;
-                Nlattr::new(
-                    None,
-                    false,
-                    false,
-                    WgDeviceAttribute::Ifname,
-                    name.as_bytes(),
-                )?
+                Nlattr::new(false, false, WgDeviceAttribute::Ifname, name.as_ref())?
             }
             DeviceInterface::Index(index) => {
-                Nlattr::new(None, false, false, WgDeviceAttribute::Ifindex, index)?
+                Nlattr::new(false, false, WgDeviceAttribute::Ifindex, index)?
             }
         };
         let genlhdr = {
@@ -74,7 +66,6 @@ impl WgSocket {
             let mut attrs = GenlBuffer::new();
 
             attrs.push(attr);
-
             Genlmsghdr::new(cmd, version, attrs)
         };
         let nlhdr = {
@@ -91,13 +82,13 @@ impl WgSocket {
 
         let mut iter = self
             .sock
-            .iter::<Genlmsghdr<WgCmd, WgDeviceAttribute>>(false);
+            .iter::<Nlmsg, Genlmsghdr<WgCmd, WgDeviceAttribute>>(false);
 
         let mut device = None;
         while let Some(Ok(response)) = iter.next() {
             match response.nl_type {
-                NlTypeWrapper::Nlmsg(Nlmsg::Error) => return Err(GetDeviceError::AccessError),
-                NlTypeWrapper::Nlmsg(Nlmsg::Done) => break,
+                Nlmsg::Error => return Err(GetDeviceError::AccessError),
+                Nlmsg::Done => break,
                 _ => (),
             };
 
@@ -126,6 +117,7 @@ impl WgSocket {
     pub fn set_device(&mut self, device: set::Device) -> Result<(), SetDeviceError> {
         for nl_message in create_set_device_messages(device, self.family_id)? {
             self.sock.send(nl_message)?;
+            self.sock.recv()?;
         }
 
         Ok(())
