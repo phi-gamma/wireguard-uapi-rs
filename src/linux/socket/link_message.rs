@@ -7,7 +7,7 @@ use neli::{
     err::NlError,
     nl::{NlPayload, Nlmsghdr},
     rtnl::{Ifinfomsg, Rtattr},
-    types::{Buffer, RtBuffer},
+    types::RtBuffer,
 };
 
 pub enum WireGuardDeviceLinkOperation {
@@ -19,17 +19,17 @@ pub fn link_message(
     ifname: &str,
     link_operation: WireGuardDeviceLinkOperation,
 ) -> Result<Nlmsghdr<Rtm, Ifinfomsg>, NlError> {
-    let ifname = Rtattr::new(None, Ifla::Ifname, Buffer::from(ifname.as_bytes()))?;
-    let link = {
+    let rtattrs = {
         let mut attrs = RtBuffer::new();
+        attrs.push(Rtattr::new(None, Ifla::Ifname, ifname.as_bytes())?);
 
-        attrs.push(Rtattr::new(
-            None,
-            IflaInfo::Kind,
-            WG_GENL_NAME.as_bytes().to_vec(),
-        )?);
+        let mut genl_name = RtBuffer::new();
+        genl_name.push(Rtattr::new(None, IflaInfo::Kind, WG_GENL_NAME.as_bytes())?);
 
-        Rtattr::new(None, Ifla::Linkinfo, attrs)?
+        let link = Rtattr::new(None, Ifla::Linkinfo, genl_name)?;
+
+        attrs.push(link);
+        attrs
     };
     let infomsg = {
         let ifi_family = RtAddrFamily::Unspecified;
@@ -38,12 +38,7 @@ pub fn link_message(
         let ifi_type = Arphrd::Netrom;
         let ifi_index = 0;
         let ifi_flags = IffFlags::empty();
-        let mut rtattrs = RtBuffer::new();
         let ifi_change = IffFlags::new(&[Iff::Up]);
-
-        rtattrs.push(ifname);
-        rtattrs.push(link);
-
         Ifinfomsg::new(
             ifi_family, ifi_type, ifi_index, ifi_flags, ifi_change, rtattrs,
         )
