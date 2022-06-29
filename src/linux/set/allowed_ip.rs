@@ -26,14 +26,13 @@ impl<'a> TryFrom<&AllowedIp<'a>> for Nlattr<NlaNested, Buffer> {
 
     fn try_from(allowed_ip: &AllowedIp) -> Result<Self, Self::Error> {
         let mut nested =
-            Nlattr::new::<Vec<u8>>(None, false, false, NlaNested::Unspec | NLA_F_NESTED, vec![])?;
+            Nlattr::new::<Vec<u8>>(false, false, NlaNested::Unspec | NLA_F_NESTED, vec![])?;
 
         let family = match allowed_ip.ipaddr {
             IpAddr::V4(_) => libc::AF_INET as u16,
             IpAddr::V6(_) => libc::AF_INET6 as u16,
         };
         nested.add_nested_attribute(&Nlattr::new(
-            None,
             false,
             false,
             WgAllowedIpAttribute::Family,
@@ -45,7 +44,6 @@ impl<'a> TryFrom<&AllowedIp<'a>> for Nlattr<NlaNested, Buffer> {
             IpAddr::V6(addr) => addr.octets().to_vec(),
         };
         nested.add_nested_attribute(&Nlattr::new(
-            None,
             false,
             false,
             WgAllowedIpAttribute::IpAddr,
@@ -57,7 +55,6 @@ impl<'a> TryFrom<&AllowedIp<'a>> for Nlattr<NlaNested, Buffer> {
             IpAddr::V6(_) => 128,
         });
         nested.add_nested_attribute(&Nlattr::new(
-            None,
             false,
             false,
             WgAllowedIpAttribute::CidrMask,

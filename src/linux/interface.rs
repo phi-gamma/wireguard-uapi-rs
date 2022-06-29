@@ -25,15 +25,11 @@ impl<'a> TryFrom<&DeviceInterface<'a>> for Nlattr<WgDeviceAttribute, Buffer> {
     fn try_from(interface: &DeviceInterface) -> Result<Self, Self::Error> {
         let attr = match interface {
             &DeviceInterface::Index(ifindex) => {
-                Nlattr::new(None, false, false, WgDeviceAttribute::Ifindex, ifindex)?
+                Nlattr::new(false, false, WgDeviceAttribute::Ifindex, ifindex)?
             }
-            DeviceInterface::Name(ifname) => Nlattr::new(
-                None,
-                false,
-                false,
-                WgDeviceAttribute::Ifname,
-                ifname.as_ref(),
-            )?,
+            DeviceInterface::Name(ifname) => {
+                Nlattr::new(false, false, WgDeviceAttribute::Ifname, ifname.as_ref())?
+            }
         };
         Ok(attr)
     }
