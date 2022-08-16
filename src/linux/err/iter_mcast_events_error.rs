@@ -1,4 +1,4 @@
-use crate::get::EndpointChangeBuilderError;
+use crate::get::MonitorEventBuilderError;
 use crate::linux::err::ParseAttributeError;
 use crate::linux::err::ParseDeviceError;
 use neli::err::{DeError, NlError};
@@ -29,7 +29,7 @@ pub enum IterMcastEventsError {
     ParseDeviceError(ParseDeviceError),
 
     #[error(transparent)]
-    EndpointChangeBuilderError(#[from] EndpointChangeBuilderError),
+    MonitorEventBuilderError(#[from] MonitorEventBuilderError),
 }
 
 impl From<NlError> for IterMcastEventsError {

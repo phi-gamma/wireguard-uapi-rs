@@ -7,6 +7,7 @@ pub enum WgCmd {
     GetDevice = 0,
     SetDevice = 1,
     ChangedPeer = 2,
+    I2nHandshake = 3,
 }
 
 impl Cmd for WgCmd {}

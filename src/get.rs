@@ -79,12 +79,18 @@ impl FromStr for AllowedIp {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum MonitorEventType {
+    EndpointChange(SocketAddr),
+    HandshakeCompleted(Duration),
+}
+
 #[derive(Builder, Clone, Debug, PartialEq)]
-pub struct EndpointChange {
+pub struct MonitorEvent {
     pub ifindex: u32,
     pub ifname: String,
     pub public_key: [u8; 32],
-    pub endpoint: SocketAddr,
+    pub event_type: MonitorEventType,
 }
 
 #[cfg(test)]

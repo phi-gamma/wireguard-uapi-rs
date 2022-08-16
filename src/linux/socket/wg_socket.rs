@@ -221,7 +221,7 @@ impl WgMcastEventIterator {
 }
 
 impl Iterator for WgMcastEventIterator {
-    type Item = Result<get::EndpointChange, IterMcastEventsError>;
+    type Item = Result<get::MonitorEvent, IterMcastEventsError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut iter = self
@@ -244,14 +244,14 @@ impl Iterator for WgMcastEventIterator {
             let payload = response.get_payload().ok()?;
 
             let handle = match payload.cmd {
-                WgCmd::ChangedPeer => payload.get_attr_handle(),
+                WgCmd::ChangedPeer | WgCmd::I2nHandshake => payload.get_attr_handle(),
                 cmd => {
                     let cmd = u8::from(cmd);
                     return Some(Err(IterMcastEventsError::UnexpectedCommandError { cmd }));
                 }
             };
 
-            return Some(parse_endpoint_change(handle));
+            return Some(parse_monitor_event(handle));
         }
 
         None

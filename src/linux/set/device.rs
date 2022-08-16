@@ -8,6 +8,13 @@ pub enum WgDeviceF {
     ReplacePeers = 1,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+#[repr(u8)]
+pub enum WgDeviceMonitorF {
+    EndpointChange = 1,
+    I2nHandshake = 1 << 1,
+}
+
 #[derive(Debug)]
 pub struct Device<'a> {
     pub interface: DeviceInterface<'a>,
@@ -21,7 +28,7 @@ pub struct Device<'a> {
     /// 0 to disable
     pub fwmark: Option<u32>,
     /// true to enable mcast events
-    pub monitor: Option<bool>,
+    pub monitor: Vec<WgDeviceMonitorF>,
     pub peers: Vec<Peer<'a>>,
 }
 
@@ -34,7 +41,7 @@ impl<'a> Device<'a> {
             listen_port: None,
             fwmark: None,
             peers: vec![],
-            monitor: None,
+            monitor: vec![],
         }
     }
 
@@ -46,7 +53,7 @@ impl<'a> Device<'a> {
             listen_port: None,
             fwmark: None,
             peers: vec![],
-            monitor: None,
+            monitor: vec![],
         }
     }
 
@@ -70,8 +77,8 @@ impl<'a> Device<'a> {
         self
     }
 
-    pub fn monitor(mut self, monitor: bool) -> Self {
-        self.monitor = Some(monitor);
+    pub fn monitor(mut self, monitor: Vec<WgDeviceMonitorF>) -> Self {
+        self.monitor = monitor;
         self
     }
 
