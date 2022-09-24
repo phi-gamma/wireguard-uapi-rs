@@ -1,5 +1,5 @@
 use super::ParseDeviceError;
-use neli::err::{NlError, SerError};
+use neli::err::{BuilderError, NlError, SerError};
 use std::io;
 use thiserror::Error;
 
@@ -10,6 +10,9 @@ pub enum GetDeviceError {
 
     #[error(transparent)]
     NlSerError(SerError),
+
+    #[error(transparent)]
+    BuilderError(BuilderError),
 
     #[error("Interface names must be 1 to IFNAMSIZ-1 characters")]
     InvalidInterfaceName,
@@ -35,6 +38,12 @@ impl From<NlError> for GetDeviceError {
 impl From<SerError> for GetDeviceError {
     fn from(error: SerError) -> Self {
         GetDeviceError::NlSerError(error)
+    }
+}
+
+impl From<BuilderError> for GetDeviceError {
+    fn from(error: BuilderError) -> Self {
+        GetDeviceError::BuilderError(error)
     }
 }
 

@@ -6,10 +6,10 @@ use crate::linux::consts::WG_GENL_VERSION;
 use crate::linux::socket::NlWgMsgType;
 use crate::linux::DeviceInterface;
 use neli::{
-    consts::nl::{NlmF, NlmFFlags},
+    consts::nl::NlmF,
     err::NlError,
-    genl::{Genlmsghdr, Nlattr},
-    nl::{NlPayload, Nlmsghdr},
+    genl::{AttrTypeBuilder, Genlmsghdr, GenlmsghdrBuilder, Nlattr, NlattrBuilder},
+    nl::{NlPayload, Nlmsghdr, NlmsghdrBuilder},
     types::{Buffer, GenlBuffer},
     Size,
 };
@@ -45,39 +45,55 @@ impl IncubatingDeviceFragment {
                     let mut unique = device.flags.clone();
                     unique.dedup();
 
-                    attrs.push(Nlattr::new(
-                        false,
-                        false,
-                        WgDeviceAttribute::Flags,
-                        unique.drain(..).map(|flag| flag as u32).sum::<u32>(),
-                    )?);
+                    attrs.push(
+                        NlattrBuilder::default()
+                            .nla_type(
+                                AttrTypeBuilder::default()
+                                    .nla_type(WgDeviceAttribute::Flags)
+                                    .build()?,
+                            )
+                            .nla_payload(unique.drain(..).map(|flag| flag as u32).sum::<u32>())
+                            .build()?,
+                    );
                 }
 
                 if let Some(private_key) = device.private_key {
-                    attrs.push(Nlattr::new(
-                        false,
-                        false,
-                        WgDeviceAttribute::PrivateKey,
-                        &private_key[..],
-                    )?);
+                    attrs.push(
+                        NlattrBuilder::default()
+                            .nla_type(
+                                AttrTypeBuilder::default()
+                                    .nla_type(WgDeviceAttribute::PrivateKey)
+                                    .build()?,
+                            )
+                            .nla_payload(&private_key[..])
+                            .build()?,
+                    );
                 }
 
                 if let Some(listen_port) = device.listen_port {
-                    attrs.push(Nlattr::new(
-                        false,
-                        false,
-                        WgDeviceAttribute::ListenPort,
-                        &listen_port.to_ne_bytes()[..],
-                    )?);
+                    attrs.push(
+                        NlattrBuilder::default()
+                            .nla_type(
+                                AttrTypeBuilder::default()
+                                    .nla_type(WgDeviceAttribute::ListenPort)
+                                    .build()?,
+                            )
+                            .nla_payload(&listen_port.to_ne_bytes()[..])
+                            .build()?,
+                    );
                 }
 
                 if let Some(fwmark) = device.fwmark {
-                    attrs.push(Nlattr::new(
-                        false,
-                        false,
-                        WgDeviceAttribute::Fwmark,
-                        fwmark,
-                    )?);
+                    attrs.push(
+                        NlattrBuilder::default()
+                            .nla_type(
+                                AttrTypeBuilder::default()
+                                    .nla_type(WgDeviceAttribute::Fwmark)
+                                    .build()?,
+                            )
+                            .nla_payload(fwmark)
+                            .build()?,
+                    );
                 }
 
                 // This covers all attributes except peers. Avoid parsing peers here purposefully
@@ -85,12 +101,14 @@ impl IncubatingDeviceFragment {
 
                 attrs
             },
-            peers: Nlattr::new::<Vec<u8>>(
-                false,
-                false,
-                WgDeviceAttribute::Peers | NLA_F_NESTED,
-                vec![],
-            )?,
+            peers: NlattrBuilder::default()
+                .nla_type(
+                    AttrTypeBuilder::default()
+                        .nla_type(WgDeviceAttribute::Peers | NLA_F_NESTED)
+                        .build()?,
+                )
+                .nla_payload(Vec::<u8>::new())
+                .build()?,
         };
 
         Ok((incubating_device, device.peers))
@@ -102,12 +120,14 @@ impl IncubatingDeviceFragment {
 
         Ok(Self {
             partial_device,
-            peers: Nlattr::new::<Vec<u8>>(
-                false,
-                false,
-                WgDeviceAttribute::Peers | NLA_F_NESTED,
-                vec![],
-            )?,
+            peers: NlattrBuilder::default()
+                .nla_type(
+                    AttrTypeBuilder::default()
+                        .nla_type(WgDeviceAttribute::Peers | NLA_F_NESTED)
+                        .build()?,
+                )
+                .nla_payload(Vec::<u8>::new())
+                .build()?,
         })
     }
 
@@ -129,20 +149,16 @@ impl IncubatingDeviceFragment {
             device_attrs.push(self.peers);
         }
 
-        let genlhdr = {
-            let cmd = WgCmd::SetDevice;
-            let version = WG_GENL_VERSION;
-            Genlmsghdr::new(cmd, version, device_attrs)
-        };
-        let nlhdr: NlWgMessage = {
-            let size = None;
-            let nl_type = family_id;
-            let flags = NlmFFlags::new(&[NlmF::Request, NlmF::Ack]);
-            let seq = None;
-            let pid = None;
-            let payload = NlPayload::Payload(genlhdr);
-            Nlmsghdr::new(size, nl_type, flags, seq, pid, payload)
-        };
+        let genlhdr = GenlmsghdrBuilder::default()
+            .cmd(WgCmd::SetDevice)
+            .version(WG_GENL_VERSION)
+            .attrs(device_attrs)
+            .build()?;
+        let nlhdr = NlmsghdrBuilder::default()
+            .nl_type(family_id)
+            .nl_flags(NlmF::REQUEST | NlmF::ACK)
+            .nl_payload(NlPayload::Payload(genlhdr))
+            .build()?;
 
         Ok(nlhdr)
     }
@@ -155,36 +171,52 @@ struct IncubatingPeerFragment {
 
 impl IncubatingPeerFragment {
     fn split_off_allowed_ips(peer: Peer<'_>) -> Result<(Self, Vec<AllowedIp<'_>>), NlError> {
-        let mut partial_peer =
-            Nlattr::new::<Vec<u8>>(false, false, NlaNested::Unspec | NLA_F_NESTED, vec![])?;
+        let mut partial_peer = NlattrBuilder::default()
+            .nla_type(
+                AttrTypeBuilder::default()
+                    .nla_type(NlaNested::Unspec | NLA_F_NESTED)
+                    .build()?,
+            )
+            .nla_payload(Vec::<u8>::new())
+            .build()?;
 
-        let public_key = Nlattr::new(
-            false,
-            false,
-            WgPeerAttribute::PublicKey,
-            peer.public_key.to_vec(),
-        )?;
-        partial_peer.add_nested_attribute(&public_key)?;
+        let public_key = NlattrBuilder::default()
+            .nla_type(
+                AttrTypeBuilder::default()
+                    .nla_type(WgPeerAttribute::PublicKey)
+                    .build()?,
+            )
+            .nla_payload(peer.public_key.to_vec())
+            .build()?;
+        partial_peer = partial_peer.nest(&public_key)?;
 
         if !peer.flags.is_empty() {
             let mut unique = peer.flags.clone();
             unique.dedup();
 
-            partial_peer.add_nested_attribute(&Nlattr::new(
-                false,
-                false,
-                WgPeerAttribute::Flags,
-                unique.drain(..).map(|flag| flag as u32).sum::<u32>(),
-            )?)?;
+            partial_peer = partial_peer.nest(
+                &NlattrBuilder::default()
+                    .nla_type(
+                        AttrTypeBuilder::default()
+                            .nla_type(WgPeerAttribute::Flags)
+                            .build()?,
+                    )
+                    .nla_payload(unique.drain(..).map(|flag| flag as u32).sum::<u32>())
+                    .build()?,
+            )?
         }
 
         if let Some(preshared_key) = peer.preshared_key {
-            partial_peer.add_nested_attribute(&Nlattr::new(
-                false,
-                false,
-                WgPeerAttribute::PresharedKey,
-                &preshared_key[..],
-            )?)?;
+            partial_peer = partial_peer.nest(
+                &NlattrBuilder::default()
+                    .nla_type(
+                        AttrTypeBuilder::default()
+                            .nla_type(WgPeerAttribute::PresharedKey)
+                            .build()?,
+                    )
+                    .nla_payload(&preshared_key[..])
+                    .build()?,
+            )?
         }
 
         if let Some(endpoint) = peer.endpoint {
@@ -212,30 +244,42 @@ impl IncubatingPeerFragment {
                 }
             };
 
-            partial_peer.add_nested_attribute(&Nlattr::new(
-                false,
-                false,
-                WgPeerAttribute::Endpoint,
-                payload,
-            )?)?;
+            partial_peer = partial_peer.nest(
+                &NlattrBuilder::default()
+                    .nla_type(
+                        AttrTypeBuilder::default()
+                            .nla_type(WgPeerAttribute::Endpoint)
+                            .build()?,
+                    )
+                    .nla_payload(payload)
+                    .build()?,
+            )?;
         }
 
         if let Some(persistent_keepalive_interval) = peer.persistent_keepalive_interval {
-            partial_peer.add_nested_attribute(&Nlattr::new(
-                false,
-                false,
-                WgPeerAttribute::PersistentKeepaliveInterval,
-                &persistent_keepalive_interval.to_ne_bytes()[..],
-            )?)?;
+            partial_peer = partial_peer.nest(
+                &NlattrBuilder::default()
+                    .nla_type(
+                        AttrTypeBuilder::default()
+                            .nla_type(WgPeerAttribute::PersistentKeepaliveInterval)
+                            .build()?,
+                    )
+                    .nla_payload(&persistent_keepalive_interval.to_ne_bytes()[..])
+                    .build()?,
+            )?;
         }
 
         if let Some(protocol_version) = peer.protocol_version {
-            partial_peer.add_nested_attribute(&Nlattr::new(
-                false,
-                false,
-                WgPeerAttribute::ProtocolVersion,
-                protocol_version,
-            )?)?;
+            partial_peer = partial_peer.nest(
+                &NlattrBuilder::default()
+                    .nla_type(
+                        AttrTypeBuilder::default()
+                            .nla_type(WgPeerAttribute::ProtocolVersion)
+                            .build()?,
+                    )
+                    .nla_payload(protocol_version)
+                    .build()?,
+            )?;
         }
 
         // This covers all attributes except allowed ips. Avoid parsing allowed ips here
@@ -243,34 +287,46 @@ impl IncubatingPeerFragment {
 
         let incubating_peer_fragment = IncubatingPeerFragment {
             partial_peer,
-            allowed_ips: Nlattr::new::<Vec<u8>>(
-                false,
-                false,
-                WgPeerAttribute::AllowedIps | NLA_F_NESTED,
-                vec![],
-            )?,
+            allowed_ips: NlattrBuilder::default()
+                .nla_type(
+                    AttrTypeBuilder::default()
+                        .nla_type(WgPeerAttribute::AllowedIps | NLA_F_NESTED)
+                        .build()?,
+                )
+                .nla_payload(Vec::<u8>::new())
+                .build()?,
         };
 
         Ok((incubating_peer_fragment, peer.allowed_ips))
     }
 
     fn from_public_key(public_key: &[u8; 32]) -> Result<Self, NlError> {
-        let mut partial_peer =
-            Nlattr::new::<Vec<u8>>(false, false, NlaNested::Unspec | NLA_F_NESTED, vec![])?;
-        let allowed_ips = Nlattr::new::<Vec<u8>>(
-            false,
-            false,
-            WgPeerAttribute::AllowedIps | NLA_F_NESTED,
-            vec![],
-        )?;
+        let mut partial_peer = NlattrBuilder::default()
+            .nla_type(
+                AttrTypeBuilder::default()
+                    .nla_type(NlaNested::Unspec | NLA_F_NESTED)
+                    .build()?,
+            )
+            .nla_payload(Vec::<u8>::new())
+            .build()?;
+        let allowed_ips = NlattrBuilder::default()
+            .nla_type(
+                AttrTypeBuilder::default()
+                    .nla_type(WgPeerAttribute::AllowedIps | NLA_F_NESTED)
+                    .build()?,
+            )
+            .nla_payload(Vec::<u8>::new())
+            .build()?;
 
-        let public_key = Nlattr::new(
-            false,
-            false,
-            WgPeerAttribute::PublicKey,
-            public_key.to_vec(),
-        )?;
-        partial_peer.add_nested_attribute(&public_key)?;
+        let public_key = NlattrBuilder::default()
+            .nla_type(
+                AttrTypeBuilder::default()
+                    .nla_type(WgPeerAttribute::PublicKey)
+                    .build()?,
+            )
+            .nla_payload(public_key.to_vec())
+            .build()?;
+        partial_peer = partial_peer.nest(&public_key)?;
 
         Ok(IncubatingPeerFragment {
             partial_peer,
@@ -285,7 +341,7 @@ impl IncubatingPeerFragment {
     fn finalize(self) -> Result<Nlattr<NlaNested, Buffer>, NlError> {
         let mut partial_peer = self.partial_peer;
         if self.allowed_ips.padded_size() > GENL_HEADER_SIZE {
-            partial_peer.add_nested_attribute(&self.allowed_ips)?;
+            partial_peer = partial_peer.nest(&self.allowed_ips)?;
         }
         Ok(partial_peer)
     }
@@ -325,9 +381,8 @@ pub fn create_set_device_messages(
                 + allowed_ip_attr.padded_size();
             if next_size > NETLINK_MSG_LIMIT {
                 let peer_fragment = incubating_peer_fragment.finalize()?;
-                incubating_device_fragment
-                    .peers
-                    .add_nested_attribute(&peer_fragment)?;
+                incubating_device_fragment.peers =
+                    incubating_device_fragment.peers.nest(&peer_fragment)?;
 
                 let device_message = incubating_device_fragment.finalize(family_id)?;
                 messages.push(device_message);
@@ -336,15 +391,13 @@ pub fn create_set_device_messages(
                 incubating_peer_fragment = IncubatingPeerFragment::from_public_key(public_key)?;
             }
 
-            incubating_peer_fragment
+            incubating_peer_fragment.allowed_ips = incubating_peer_fragment
                 .allowed_ips
-                .add_nested_attribute(&allowed_ip_attr)?;
+                .nest(&allowed_ip_attr)?;
         }
 
         let peer_attr = incubating_peer_fragment.finalize()?;
-        incubating_device_fragment
-            .peers
-            .add_nested_attribute(&peer_attr)?;
+        incubating_device_fragment.peers = incubating_device_fragment.peers.nest(&peer_attr)?;
     }
 
     let device_message = incubating_device_fragment.finalize(family_id)?;

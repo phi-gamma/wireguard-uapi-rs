@@ -1,38 +1,37 @@
 use crate::err::ListDevicesError;
 use neli::{
     consts::{
-        nl::{NlmF, NlmFFlags, Nlmsg},
-        rtnl::{Arphrd, Iff, IffFlags, Ifla, IflaInfo, Rtm},
+        nl::{NlmF, Nlmsg},
+        rtnl::{Arphrd, Iff, Ifla, IflaInfo, Rtm},
     },
-    nl::{NlPayload, Nlmsghdr},
-    rtnl::Ifinfomsg,
+    err::BuilderError,
+    nl::{NlPayload, Nlmsghdr, NlmsghdrBuilder},
+    rtnl::{Ifinfomsg, IfinfomsgBuilder},
     types::RtBuffer,
 };
 use std::convert::TryFrom;
 
-pub fn get_list_device_names_msg() -> Nlmsghdr<Rtm, Ifinfomsg> {
+pub fn get_list_device_names_msg() -> Result<Nlmsghdr<Rtm, Ifinfomsg>, BuilderError> {
     let infomsg = {
-        let ifi_family = neli::consts::rtnl::RtAddrFamily::Unspecified;
-        // Arphrd::Netrom corresponds to 0. Not sure why 0 is necessary here but this is what the
-        // embedded C library does.
-        let ifi_type = Arphrd::Netrom;
-        let ifi_index = 0;
-        let ifi_flags = IffFlags::empty();
-        let rtattrs = RtBuffer::new();
-        let ifi_change = IffFlags::new(&[Iff::Up]);
-
-        Ifinfomsg::new(
-            ifi_family, ifi_type, ifi_index, ifi_flags, ifi_change, rtattrs,
-        )
+        IfinfomsgBuilder::default()
+            .ifi_family(neli::consts::rtnl::RtAddrFamily::Unspecified)
+            // Arphrd::Netrom corresponds to 0. Not sure why 0 is necessary here but this is what the
+            // embedded C library does.
+            .ifi_type(Arphrd::Netrom)
+            .ifi_index(0)
+            .ifi_flags(Iff::empty())
+            .rtattrs(RtBuffer::new())
+            .ifi_change(Iff::UP)
+            .build()
+            .map_err(BuilderError::from)?
     };
 
-    let len = None;
-    let nl_type = Rtm::Getlink;
-    let flags = NlmFFlags::new(&[NlmF::Request, NlmF::Ack, NlmF::Dump]);
-    let seq = None;
-    let pid = None;
-    let payload = infomsg;
-    Nlmsghdr::new(len, nl_type, flags, seq, pid, NlPayload::Payload(payload))
+    NlmsghdrBuilder::default()
+        .nl_type(Rtm::Getlink)
+        .nl_flags(NlmF::REQUEST | NlmF::ACK | NlmF::DUMP)
+        .nl_payload(NlPayload::Payload(infomsg))
+        .build()
+        .map_err(BuilderError::from)
 }
 
 pub struct PotentialWireGuardDeviceName {
@@ -44,11 +43,8 @@ impl TryFrom<Nlmsghdr<Nlmsg, Ifinfomsg>> for PotentialWireGuardDeviceName {
     type Error = ListDevicesError;
 
     fn try_from(response: Nlmsghdr<Nlmsg, Ifinfomsg>) -> Result<Self, Self::Error> {
-        let payload = response
-            .nl_payload
-            .get_payload()
-            .ok_or(ListDevicesError::Unknown)?;
-        let mut handle = payload.rtattrs.get_attr_handle();
+        let payload = response.get_payload().ok_or(ListDevicesError::Unknown)?;
+        let mut handle = payload.rtattrs().get_attr_handle();
 
         Ok(PotentialWireGuardDeviceName {
             ifname: handle

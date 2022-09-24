@@ -11,13 +11,17 @@ use crate::linux::DeviceInterface;
 use libc::IFNAMSIZ;
 use neli::{
     consts::{
-        nl::{NlmF, NlmFFlags, Nlmsg},
+        genl::{CtrlAttr, CtrlCmd},
+        nl::{NlmF, Nlmsg},
         socket::NlFamily,
     },
-    genl::{Genlmsghdr, Nlattr},
-    nl::{NlPayload, Nlmsghdr},
+    err::{BuilderError, NlError},
+    genl::{AttrTypeBuilder, Genlmsghdr, GenlmsghdrBuilder, NlattrBuilder},
+    iter::IterationBehavior,
+    nl::{NlPayload, NlmsghdrBuilder},
     socket::NlSocketHandle,
     types::GenlBuffer,
+    utils::Groups,
 };
 use std::convert::TryFrom;
 
@@ -36,8 +40,7 @@ impl WgSocket {
 
         // Autoselect a PID
         let pid = None;
-        let groups = &[];
-        let wgsock = NlSocketHandle::connect(NlFamily::Generic, pid, groups)?;
+        let wgsock = NlSocketHandle::connect(NlFamily::Generic, pid, Groups::empty())?;
 
         Ok(Self {
             sock: wgsock,
@@ -54,45 +57,65 @@ impl WgSocket {
                 Some(name.len())
                     .filter(|&len| 0 < len && len < IFNAMSIZ)
                     .ok_or(GetDeviceError::InvalidInterfaceName)?;
-                Nlattr::new(false, false, WgDeviceAttribute::Ifname, name.as_ref())?
+                NlattrBuilder::default()
+                    .nla_type(
+                        AttrTypeBuilder::default()
+                            .nla_type(WgDeviceAttribute::Ifname)
+                            .build()
+                            .map_err(BuilderError::from)?,
+                    )
+                    .nla_payload(name.as_ref())
+                    .build()
+                    .map_err(BuilderError::from)?
             }
-            DeviceInterface::Index(index) => {
-                Nlattr::new(false, false, WgDeviceAttribute::Ifindex, index)?
-            }
+            DeviceInterface::Index(index) => NlattrBuilder::default()
+                .nla_type(
+                    AttrTypeBuilder::default()
+                        .nla_type(WgDeviceAttribute::Ifindex)
+                        .build()
+                        .map_err(BuilderError::from)?,
+                )
+                .nla_payload(index)
+                .build()
+                .map_err(BuilderError::from)?,
         };
-        let genlhdr = {
-            let cmd = WgCmd::GetDevice;
-            let version = WG_GENL_VERSION;
-            let mut attrs = GenlBuffer::new();
 
+        let genlhdr = {
+            let mut attrs = GenlBuffer::new();
             attrs.push(attr);
-            Genlmsghdr::new(cmd, version, attrs)
+
+            GenlmsghdrBuilder::default()
+                .cmd(WgCmd::GetDevice)
+                .version(WG_GENL_VERSION)
+                .attrs(attrs)
+                .build()
+                .map_err(BuilderError::from)?
         };
-        let nlhdr = {
-            let size = None;
-            let nl_type = self.family_id;
-            let flags = NlmFFlags::new(&[NlmF::Request, NlmF::Ack, NlmF::Dump]);
-            let seq = None;
-            let pid = None;
-            let payload = NlPayload::Payload(genlhdr);
-            Nlmsghdr::new(size, nl_type, flags, seq, pid, payload)
-        };
+        let nlhdr = NlmsghdrBuilder::default()
+            .nl_type(self.family_id)
+            .nl_flags(NlmF::REQUEST | NlmF::ACK | NlmF::DUMP)
+            .nl_payload(NlPayload::Payload(genlhdr))
+            .build()
+            .map_err(BuilderError::from)?;
 
         self.sock.send(nlhdr)?;
 
         let mut iter = self
             .sock
-            .iter::<Nlmsg, Genlmsghdr<WgCmd, WgDeviceAttribute>>(false);
+            .recv::<Nlmsg, Genlmsghdr<WgCmd, WgDeviceAttribute>>(IterationBehavior::EndMultiOnDone);
 
         let mut device = None;
         while let Some(Ok(response)) = iter.next() {
-            match response.nl_type {
+            match response.nl_type() {
                 Nlmsg::Error => return Err(GetDeviceError::AccessError),
                 Nlmsg::Done => break,
                 _ => (),
             };
 
-            let handle = response.get_payload()?.get_attr_handle();
+            let handle = response
+                .get_payload()
+                .ok_or_else(|| NlError::msg("No payload found"))?
+                .get_attr_handle();
             device = Some(match device {
                 Some(device) => extend_device(device, handle)?,
                 None => get::Device::try_from(handle)?,
@@ -117,7 +140,8 @@ impl WgSocket {
     pub fn set_device(&mut self, device: set::Device) -> Result<(), SetDeviceError> {
         for nl_message in create_set_device_messages(device, self.family_id)? {
             self.sock.send(nl_message)?;
-            self.sock.recv()?;
+            self.sock
+                .recv::<Nlmsg, Genlmsghdr<CtrlCmd, CtrlAttr>>(IterationBehavior::EndMultiOnDone);
         }
 
         Ok(())

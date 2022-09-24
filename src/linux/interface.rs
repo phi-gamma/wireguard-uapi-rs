@@ -1,5 +1,9 @@
 use crate::linux::attr::WgDeviceAttribute;
-use neli::{err::NlError, genl::Nlattr, types::Buffer};
+use neli::{
+    err::NlError,
+    genl::{AttrTypeBuilder, Nlattr, NlattrBuilder},
+    types::Buffer,
+};
 use std::borrow::Cow;
 use std::convert::TryFrom;
 
@@ -24,12 +28,22 @@ impl<'a> TryFrom<&DeviceInterface<'a>> for Nlattr<WgDeviceAttribute, Buffer> {
 
     fn try_from(interface: &DeviceInterface) -> Result<Self, Self::Error> {
         let attr = match interface {
-            &DeviceInterface::Index(ifindex) => {
-                Nlattr::new(false, false, WgDeviceAttribute::Ifindex, ifindex)?
-            }
-            DeviceInterface::Name(ifname) => {
-                Nlattr::new(false, false, WgDeviceAttribute::Ifname, ifname.as_ref())?
-            }
+            &DeviceInterface::Index(ifindex) => NlattrBuilder::default()
+                .nla_type(
+                    AttrTypeBuilder::default()
+                        .nla_type(WgDeviceAttribute::Ifindex)
+                        .build()?,
+                )
+                .nla_payload(ifindex)
+                .build()?,
+            DeviceInterface::Name(ifname) => NlattrBuilder::default()
+                .nla_type(
+                    AttrTypeBuilder::default()
+                        .nla_type(WgDeviceAttribute::Ifname)
+                        .build()?,
+                )
+                .nla_payload(ifname.as_ref())
+                .build()?,
         };
         Ok(attr)
     }

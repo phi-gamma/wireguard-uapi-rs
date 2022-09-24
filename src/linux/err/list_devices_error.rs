@@ -1,5 +1,5 @@
 use super::ParseAttributeError;
-use neli::err::{DeError, NlError, SerError};
+use neli::err::{BuilderError, DeError, NlError, SerError};
 use std::io;
 use thiserror::Error;
 
@@ -13,6 +13,9 @@ pub enum ListDevicesError {
 
     #[error(transparent)]
     NlSerError(SerError),
+
+    #[error(transparent)]
+    BuilderError(BuilderError),
 
     #[error(transparent)]
     ParseAttributeError(ParseAttributeError),
@@ -40,6 +43,12 @@ impl From<DeError> for ListDevicesError {
 impl From<SerError> for ListDevicesError {
     fn from(error: SerError) -> Self {
         Self::NlSerError(error)
+    }
+}
+
+impl From<BuilderError> for ListDevicesError {
+    fn from(error: BuilderError) -> Self {
+        Self::BuilderError(error)
     }
 }
 

@@ -1,12 +1,12 @@
 use crate::linux::consts::WG_GENL_NAME;
 use neli::{
     consts::{
-        nl::{NlmF, NlmFFlags},
-        rtnl::{Arphrd, Iff, IffFlags, Ifla, IflaInfo, RtAddrFamily, Rtm},
+        nl::NlmF,
+        rtnl::{Arphrd, Iff, Ifla, IflaInfo, RtAddrFamily, Rtm},
     },
     err::NlError,
-    nl::{NlPayload, Nlmsghdr},
-    rtnl::{Ifinfomsg, Rtattr},
+    nl::{NlPayload, Nlmsghdr, NlmsghdrBuilder},
+    rtnl::{Ifinfomsg, IfinfomsgBuilder, RtattrBuilder},
     types::RtBuffer,
 };
 
@@ -21,45 +21,59 @@ pub fn link_message(
 ) -> Result<Nlmsghdr<Rtm, Ifinfomsg>, NlError> {
     let rtattrs = {
         let mut attrs = RtBuffer::new();
-        attrs.push(Rtattr::new(None, Ifla::Ifname, ifname.as_bytes())?);
+        attrs.push(
+            RtattrBuilder::default()
+                .rta_type(Ifla::Ifname)
+                .rta_payload(ifname.as_bytes())
+                .build()?,
+        );
 
         let mut genl_name = RtBuffer::new();
-        genl_name.push(Rtattr::new(None, IflaInfo::Kind, WG_GENL_NAME.as_bytes())?);
+        genl_name.push(
+            RtattrBuilder::default()
+                .rta_type(IflaInfo::Kind)
+                .rta_payload(WG_GENL_NAME.as_bytes())
+                .build()?,
+        );
 
-        let link = Rtattr::new(None, Ifla::Linkinfo, genl_name)?;
+        let link = RtattrBuilder::default()
+            .rta_type(Ifla::Linkinfo)
+            .rta_payload(genl_name)
+            .build()?;
 
         attrs.push(link);
         attrs
     };
     let infomsg = {
-        let ifi_family = RtAddrFamily::Unspecified;
-        // Arphrd::Netrom corresponds to 0. Not sure why 0 is necessary here but this is what the
-        // embedded C library does.
-        let ifi_type = Arphrd::Netrom;
-        let ifi_index = 0;
-        let ifi_flags = IffFlags::empty();
-        let ifi_change = IffFlags::new(&[Iff::Up]);
-        Ifinfomsg::new(
-            ifi_family, ifi_type, ifi_index, ifi_flags, ifi_change, rtattrs,
-        )
+        IfinfomsgBuilder::default()
+            .ifi_family(RtAddrFamily::Unspecified)
+            // Arphrd::Netrom corresponds to 0. Not sure why 0 is necessary here but this is what the
+            // embedded C library does.
+            .ifi_type(Arphrd::Netrom)
+            .ifi_index(0)
+            .ifi_flags(Iff::empty())
+            .ifi_change(Iff::UP)
+            .rtattrs(rtattrs)
+            .build()?
     };
 
     let nlmsg = {
-        let len = None;
         let nl_type = match link_operation {
             WireGuardDeviceLinkOperation::Add => Rtm::Newlink,
             WireGuardDeviceLinkOperation::Delete => Rtm::Dellink,
         };
         let flags = match link_operation {
             WireGuardDeviceLinkOperation::Add => {
-                NlmFFlags::new(&[NlmF::Request, NlmF::Ack, NlmF::Create, NlmF::Excl])
+                NlmF::REQUEST | NlmF::ACK | NlmF::CREATE | NlmF::EXCL
             }
-            WireGuardDeviceLinkOperation::Delete => NlmFFlags::new(&[NlmF::Request, NlmF::Ack]),
+            WireGuardDeviceLinkOperation::Delete => NlmF::REQUEST | NlmF::ACK,
         };
-        let seq = None;
-        let pid = None;
         let payload = NlPayload::Payload(infomsg);
-        Nlmsghdr::new(len, nl_type, flags, seq, pid, payload)
+        NlmsghdrBuilder::default()
+            .nl_type(nl_type)
+            .nl_flags(flags)
+            .nl_payload(payload)
+            .build()?
     };
 
     Ok(nlmsg)

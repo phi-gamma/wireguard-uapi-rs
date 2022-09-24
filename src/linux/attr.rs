@@ -7,7 +7,6 @@ use std::fmt;
 // A future version of neli should do this automatically. At that point the
 // below consts can be deleted.
 pub(crate) const NLA_F_NESTED: u16 = libc::NLA_F_NESTED as u16;
-pub(crate) const NLA_TYPE_MASK: u16 = libc::NLA_TYPE_MASK as u16;
 
 macro_rules! impl_bit_ops_for_nla {
     ($name:ident) => {

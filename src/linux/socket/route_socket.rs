@@ -3,9 +3,16 @@ use super::{link_message, WireGuardDeviceLinkOperation};
 use crate::err::{ConnectError, LinkDeviceError, ListDevicesError};
 use list_device_names_utils::PotentialWireGuardDeviceName;
 use neli::{
-    consts::{nl::Nlmsg, socket::NlFamily},
+    consts::{
+        genl::{CtrlAttr, CtrlCmd},
+        nl::Nlmsg,
+        socket::NlFamily,
+    },
+    genl::Genlmsghdr,
+    iter::IterationBehavior,
     rtnl::Ifinfomsg,
     socket::NlSocketHandle,
+    utils::Groups,
 };
 use std::convert::TryFrom;
 
@@ -17,8 +24,7 @@ impl RouteSocket {
     pub fn connect() -> Result<Self, ConnectError> {
         // Autoselect a PID
         let pid = None;
-        let groups = &[];
-        let sock = NlSocketHandle::connect(NlFamily::Route, pid, groups)?;
+        let sock = NlSocketHandle::connect(NlFamily::Route, pid, Groups::empty())?;
 
         Ok(Self { sock })
     }
@@ -26,7 +32,8 @@ impl RouteSocket {
     pub fn add_device(&mut self, ifname: &str) -> Result<(), LinkDeviceError> {
         let operation = WireGuardDeviceLinkOperation::Add;
         self.sock.send(link_message(ifname, operation)?)?;
-        self.sock.recv()?;
+        self.sock
+            .recv::<Nlmsg, Genlmsghdr<CtrlCmd, CtrlAttr>>(IterationBehavior::EndMultiOnDone);
 
         Ok(())
     }
@@ -34,7 +41,8 @@ impl RouteSocket {
     pub fn del_device(&mut self, ifname: &str) -> Result<(), LinkDeviceError> {
         let operation = WireGuardDeviceLinkOperation::Delete;
         self.sock.send(link_message(ifname, operation)?)?;
-        self.sock.recv()?;
+        self.sock
+            .recv::<Nlmsg, Genlmsghdr<CtrlCmd, CtrlAttr>>(IterationBehavior::EndMultiOnDone);
 
         Ok(())
     }
@@ -43,14 +51,16 @@ impl RouteSocket {
     /// [IFLA_INFO_KIND](libc::IFLA_INFO_KIND) value.
     pub fn list_device_names(&mut self) -> Result<Vec<String>, ListDevicesError> {
         self.sock
-            .send(list_device_names_utils::get_list_device_names_msg())?;
+            .send(list_device_names_utils::get_list_device_names_msg()?)?;
 
-        let mut iter = self.sock.iter::<Nlmsg, Ifinfomsg>(false);
+        let mut iter = self
+            .sock
+            .recv::<Nlmsg, Ifinfomsg>(IterationBehavior::EndMultiOnDone);
 
         let mut result_names = vec![];
 
         while let Some(Ok(response)) = iter.next() {
-            match response.nl_type {
+            match response.nl_type() {
                 Nlmsg::Error => return Err(ListDevicesError::Unknown),
                 Nlmsg::Done => break,
                 _ => (),
